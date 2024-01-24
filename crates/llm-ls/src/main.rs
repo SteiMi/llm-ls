@@ -23,7 +23,7 @@ mod adaptors;
 mod document;
 mod language_id;
 
-const MAX_WARNING_REPEAT: Duration = Duration::from_secs(3_600);
+const MAX_WARNING_REPEAT: Duration = Duration::from_secs(0);
 pub const NAME: &str = "llm-ls";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
