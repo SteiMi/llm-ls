@@ -306,17 +306,17 @@ fn build_prompt(
 ) -> Result<String> {
     let t = Instant::now();
     if fim.enabled {
-        let mut token_count = context_window;
+        let mut remaining_token_count = context_window - 3; // account for FIM tokens
         let mut before_iter = text.lines_at(pos.line as usize + 1).reversed();
         let mut after_iter = text.lines_at(pos.line as usize);
         let mut before_line = before_iter.next();
         if let Some(line) = before_line {
-            let col = (pos.character as usize).clamp(0, line.len_chars() - 1);
+            let col = (pos.character as usize).clamp(0, line.len_chars());
             before_line = Some(line.slice(0..col));
         }
         let mut after_line = after_iter.next();
         if let Some(line) = after_line {
-            let col = (pos.character as usize).clamp(0, line.len_chars() - 1);
+            let col = (pos.character as usize).clamp(0, line.len_chars());
             after_line = Some(line.slice(col..));
         }
         let mut before = vec![];
@@ -332,10 +332,10 @@ fn build_prompt(
                 } else {
                     before_line.len()
                 };
-                if tokens > token_count {
+                if tokens > remaining_token_count {
                     break;
                 }
-                token_count -= tokens;
+                remaining_token_count -= tokens;
                 before.push(before_line);
             }
             if let Some(after_line) = after_line {
@@ -348,10 +348,10 @@ fn build_prompt(
                 } else {
                     after_line.len()
                 };
-                if tokens > token_count {
+                if tokens > remaining_token_count {
                     break;
                 }
-                token_count -= tokens;
+                remaining_token_count -= tokens;
                 after.push_str(&after_line);
             }
             before_line = before_iter.next();
@@ -369,12 +369,12 @@ fn build_prompt(
         info!(prompt, build_prompt_ms = time, "built prompt in {time} ms");
         Ok(prompt)
     } else {
-        let mut token_count = context_window;
+        let mut remaining_token_count = context_window;
         let mut before = vec![];
         let mut first = true;
         for mut line in text.lines_at(pos.line as usize + 1).reversed() {
             if first {
-                let col = (pos.character as usize).clamp(0, line.len_chars() - 1);
+                let col = (pos.character as usize).clamp(0, line.len_chars());
                 line = line.slice(0..col);
                 first = false;
             }
@@ -387,10 +387,10 @@ fn build_prompt(
             } else {
                 line.len()
             };
-            if tokens > token_count {
+            if tokens > remaining_token_count {
                 break;
             }
-            token_count -= tokens;
+            remaining_token_count -= tokens;
             before.push(line);
         }
         let prompt = before.into_iter().rev().collect::<Vec<_>>().join("");
@@ -734,10 +734,19 @@ impl LanguageServer for Backend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri.to_string();
-        self.client
-            .log_message(MessageType::INFO, format!("{uri} changed"))
-            .await;
+        if params.content_changes.is_empty() {
+            return;
+        }
+
+        // ignore the output scheme
+        if uri.starts_with("output:") {
+            return;
+        }
+
         let mut document_map = self.document_map.write().await;
+        self.client
+            .log_message(MessageType::LOG, format!("{uri} changed"))
+            .await;
         let doc = document_map.get_mut(&uri);
         if let Some(doc) = doc {
             for change in &params.content_changes {
@@ -851,4 +860,3 @@ async fn main() {
 
     Server::new(stdin, stdout, socket).serve(service).await;
 }
-
